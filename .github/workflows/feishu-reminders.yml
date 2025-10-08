@@ -12,8 +12,30 @@ jobs:
   send-daily-reminder:
     runs-on: ubuntu-latest
     steps:
+      - name: Check Current Time
+        id: time-check
+        run: |
+          # 获取当前UTC时间
+          UTC_HOUR=$(date -u +%H)
+          echo "Current UTC hour: $UTC_HOUR"
+          
+          # 转换为北京时间 (UTC+8)
+          BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
+          echo "Current Beijing hour: $BEIJING_HOUR"
+          
+          # 判断是上午还是下午
+          if [ $BEIJING_HOUR -lt 12 ]; then
+            echo "CURRENT_PERIOD=morning" >> $GITHUB_OUTPUT
+            echo "It's morning in Beijing"
+          else
+            echo "CURRENT_PERIOD=afternoon" >> $GITHUB_OUTPUT
+            echo "It's afternoon in Beijing"
+          fi
+
       - name: Send Morning Message
-        if: github.event.schedule == '0 1 * * *' || github.event_name == 'workflow_dispatch'
+        if: |
+          (github.event.schedule == '0 1 * * *') ||
+          (github.event_name == 'workflow_dispatch' && steps.time-check.outputs.CURRENT_PERIOD == 'morning')
         run: |
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
           curl -X POST \
@@ -52,7 +74,9 @@ jobs:
           echo "✅ 上午提醒消息已发送 - $BEIJING_TIME"
 
       - name: Send Afternoon Message
-        if: github.event.schedule == '0 7 * * *' || github.event_name == 'workflow_dispatch'
+        if: |
+          (github.event.schedule == '0 7 * * *') ||
+          (github.event_name == 'workflow_dispatch' && steps.time-check.outputs.CURRENT_PERIOD == 'afternoon')
         run: |
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
           curl -X POST \
@@ -89,3 +113,9 @@ jobs:
               }
             }'
           echo "✅ 下午提醒消息已发送 - $BEIJING_TIME"
+
+      - name: Log Completion
+        run: |
+          echo "🎉 飞书提醒任务执行完成"
+          echo "当前北京时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "触发方式: ${{ github.event_name }}"
