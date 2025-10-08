@@ -1,0 +1,90 @@
+# 飞书每日提醒
+
+name: Feishu Daily Reminders
+
+on:
+  schedule:
+    # 每天上午9点 (UTC+8 北京时间)
+    - cron: '0 1 * * *'   # UTC时间1点 = 北京时间9点
+    # 每天下午3点 (UTC+8 北京时间)
+    - cron: '0 7 * * *'   # UTC时间7点 = 北京时间15点
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  send-feishu-message:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Send morning reminder
+      if: github.event.schedule == '0 1 * * *'  # 只在上午9点触发时执行
+      run: |
+        curl -X POST \
+          ${{ secrets.FEISHU_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "msg_type": "interactive",
+            "card": {
+              "elements": [{
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "⏰ **上午工作提醒**\n\n美好的一天开始啦！\n• 检查今日工作计划\n• 今天有60张表要上传吗？\n• 开始专注工作\n• 记得补充水分 💧"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**今日提醒：**\n• 完成主要任务\n• 60表上传了吗？\"
+                  }
+                }
+              ],
+              "header": {
+                "template": "blue",
+                "title": {
+                  "content": "🌞 早安提醒 | ",
+                  "tag": "plain_text"
+                }
+              }
+            }
+          }'
+      
+    - name: Send afternoon reminder
+      if: github.event.schedule == '0 7 * * *'  # 只在下午3点触发时执行
+      run: |
+        curl -X POST \
+          ${{ secrets.FEISHU_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "msg_type": "interactive",
+            "card": {
+              "elements": [{
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "☕ **下午工作提醒**\n\n下午时光，继续加油！\n• 回顾上午工作进度\n• 规划下午任务安排\n• 适当休息放松\n• 保持高效状态 🚀"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**进度检查：**\n• 上午任务完成情况\n• 下午重点事项\n• 明日计划准备"
+                  }
+                }
+              ],
+              "header": {
+                "template": "wathet",
+                "title": {
+                  "content": "🌅 午后提醒 | ",
+                  "tag": "plain_text"
+                }
+              }
+            }
+          }'
