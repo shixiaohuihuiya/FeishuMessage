@@ -12,40 +12,183 @@ jobs:
   send-daily-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug Info
+      - name: Check Current Time
+        id: time-check
         run: |
-          echo "🔍 调试信息:"
-          echo "Event: ${{ github.event_name }}"
-          echo "Schedule: ${{ github.event.schedule }}"
-          echo "Current UTC: $(date -u)"
-          echo "Current Beijing: $(TZ='Asia/Shanghai' date)"
-          echo "Webhook URL configured: $([ -n '${{ secrets.FEISHU_WEBHOOK_URL }}' ] && echo 'YES' || echo 'NO')"
+          # 获取当前UTC时间并转换为北京时间
+          UTC_HOUR=$(date -u +%H)
+          BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
+          
+          # 判断是上午还是下午
+          if [ $BEIJING_HOUR -lt 12 ]; then
+            echo "PERIOD=morning" >> $GITHUB_OUTPUT
+            echo "SCHEDULE_NAME=上午提醒" >> $GITHUB_OUTPUT
+            echo "当前是北京时间上午，发送上午提醒"
+          else
+            echo "PERIOD=afternoon" >> $GITHUB_OUTPUT
+            echo "SCHEDULE_NAME=下午提醒" >> $GITHUB_OUTPUT
+            echo "当前是北京时间下午，发送下午提醒"
+          fi
 
-      - name: Simple Test Message
+      - name: Send Morning Message
+        if: steps.time-check.outputs.PERIOD == 'morning'
         run: |
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-          echo "⏰ 当前北京时间: $BEIJING_TIME"
+          echo "🕘 发送上午消息 - $BEIJING_TIME"
           
-          # 简单的测试消息
+          # 构建消息数据
+          MESSAGE_JSON='{
+            "msg_type": "interactive",
+            "card": {
+              "config": {
+                "wide_screen_mode": true
+              },
+              "header": {
+                "title": {
+                  "tag": "plain_text",
+                  "content": "🌞 早安！开始今天的工作吧"
+                },
+                "template": "wathet"
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n新的一天，新的开始！保持积极心态，工作效率翻倍！🚀\n\n⏰ **提醒时间：** '"$BEIJING_TIME"'\n🔧 **触发方式：** '"${{ github.event_name }}"'"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
+                  }
+                },
+                {
+                  "tag": "action",
+                  "actions": [
+                    {
+                      "tag": "button",
+                      "text": {
+                        "tag": "plain_text",
+                        "content": "👍 收到，开始工作"
+                      },
+                      "type": "primary",
+                      "url": "https://github.com/'"$GITHUB_REPOSITORY"'"
+                    }
+                  ]
+                }
+              ]
+            }
+          }'
+          
+          # 发送消息
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "${{ secrets.FEISHU_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "msg_type": "text",
-              "content": {
-                "text": "测试消息 - 如果收到此消息说明机器人配置正常\n时间: '"$BEIJING_TIME"'\n触发方式: '"${{ github.event_name }}"'"
-              }
-            }')
+            -d "$MESSAGE_JSON")
           
-          # 解析响应
+          # 检查响应
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
           
-          echo "📡 HTTP 状态码: $HTTP_CODE"
-          echo "📨 响应内容: $RESPONSE_BODY"
+          echo "HTTP 状态码: $HTTP_CODE"
+          echo "响应内容: $RESPONSE_BODY"
           
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "✅ 消息发送成功！"
+          if [ "$HTTP_CODE" -eq 200 ] && echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
+            echo "✅ 上午提醒消息发送成功！"
           else
             echo "❌ 消息发送失败"
+            exit 1
           fi
+
+      - name: Send Afternoon Message
+        if: steps.time-check.outputs.PERIOD == 'afternoon'
+        run: |
+          BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          echo "🕒 发送下午消息 - $BEIJING_TIME"
+          
+          # 构建消息数据
+          MESSAGE_JSON='{
+            "msg_type": "interactive",
+            "card": {
+              "config": {
+                "wide_screen_mode": true
+              },
+              "header": {
+                "title": {
+                  "tag": "plain_text",
+                  "content": "☕ 下午好！继续加油"
+                },
+                "template": "orange"
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n下午是创造奇迹的时间！继续保持专注，胜利在望！✨\n\n⏰ **提醒时间：** '"$BEIJING_TIME"'\n🔧 **触发方式：** '"${{ github.event_name }}"'"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
+                  }
+                },
+                {
+                  "tag": "action",
+                  "actions": [
+                    {
+                      "tag": "button",
+                      "text": {
+                        "tag": "plain_text",
+                        "content": "💪 继续努力"
+                      },
+                      "type": "primary",
+                      "url": "https://github.com/'"$GITHUB_REPOSITORY"'"
+                    }
+                  ]
+                }
+              ]
+            }
+          }'
+          
+          # 发送消息
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.FEISHU_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "$MESSAGE_JSON")
+          
+          # 检查响应
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP 状态码: $HTTP_CODE"
+          echo "响应内容: $RESPONSE_BODY"
+          
+          if [ "$HTTP_CODE" -eq 200 ] && echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
+            echo "✅ 下午提醒消息发送成功！"
+          else
+            echo "❌ 消息发送失败"
+            exit 1
+          fi
+
+      - name: Success Notification
+        if: success()
+        run: |
+          echo "🎉 飞书每日提醒任务完成！"
+          echo "================================="
+          echo "📅 发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "📝 消息类型: ${{ steps.time-check.outputs.SCHEDULE_NAME }}"
+          echo "🔧 触发方式: ${{ github.event_name }}"
+          echo "================================="
+          echo "请检查飞书群聊是否收到消息 📱"
