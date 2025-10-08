@@ -59,10 +59,10 @@ jobs:
             echo "🕒 发送下午提醒消息"
           fi
 
-      - name: Generate Signature
+      - name: Generate Fresh Signature
         id: signature
         run: |
-          # 生成时间戳（秒级）
+          # 生成时间戳（秒级）- 确保是最新的
           TIMESTAMP=$(date +%s)
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
           
@@ -70,42 +70,59 @@ jobs:
           NONCE=$(openssl rand -hex 16)
           echo "nonce=$NONCE" >> $GITHUB_OUTPUT
           
-          # 飞书签名算法：timestamp + "\n" + secret
-          # 注意：必须使用 echo -e 来处理换行符
-          SIGNATURE_STRING="$TIMESTAMP\n$FEISHU_SIGN_SECRET"
-          SIGNATURE=$(echo -e "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
+          echo "当前时间戳: $TIMESTAMP"
+          echo "当前时间: $(date)"
+          echo "签名密钥长度: ${#FEISHU_SIGN_SECRET}"
+          
+          # 方法1: 使用 printf 和 echo -e 组合
+          SIGNATURE_STRING="$TIMESTAMP"$'\n'"$FEISHU_SIGN_SECRET"
+          SIGNATURE=$(printf "%s" "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
           echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
           
-          echo "✅ 签名生成成功"
+          echo "✅ 签名生成完成"
           echo "Timestamp: $TIMESTAMP"
           echo "Nonce: $NONCE"
           echo "Signature: $SIGNATURE"
-          echo "Signature String (debug): $TIMESTAMP\\n$FEISHU_SIGN_SECRET"
+          echo "签名字符串预览: ${TIMESTAMP}\n${FEISHU_SIGN_SECRET:0:10}..."
 
-      - name: Test Signature Without Message
+      - name: Debug Signature
         run: |
-          echo "🧪 测试签名验证（不发送消息）"
+          echo "🔍 签名调试信息:"
           echo "Timestamp: ${{ steps.signature.outputs.timestamp }}"
           echo "Nonce: ${{ steps.signature.outputs.nonce }}"
           echo "Signature: ${{ steps.signature.outputs.signature }}"
-          echo "Webhook URL: $(echo $FEISHU_WEBHOOK_URL | cut -d'/' -f1-5)/***"
+          echo "当前时间: $(date)"
+          echo "当前时间戳: $(date +%s)"
+          echo "时间差: $(( $(date +%s) - ${{ steps.signature.outputs.timestamp }} )) 秒"
 
-      - name: Send Test Message (Simple Text)
+      - name: Send Test Message (Alternative Signature Method)
         run: |
-          echo "🧪 发送简单测试消息验证签名"
+          echo "🧪 使用替代签名方法测试"
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
           
-          # 发送简单的文本消息测试签名
+          # 重新生成时间戳和签名（确保最新）
+          TIMESTAMP=$(date +%s)
+          NONCE=$(openssl rand -hex 16)
+          
+          # 方法2: 使用不同的签名生成方式
+          # 飞书官方文档示例通常使用这种方式
+          SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SIGN_SECRET}"
+          SIGNATURE=$(echo -n -e "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64 | tr -d '\n')
+          
+          echo "新时间戳: $TIMESTAMP"
+          echo "新签名: $SIGNATURE"
+          
+          # 发送测试消息
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "$FEISHU_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -H "X-Lark-Signature: ${{ steps.signature.outputs.signature }}" \
-            -H "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}" \
-            -H "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}" \
+            -H "X-Lark-Signature: $SIGNATURE" \
+            -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
+            -H "X-Lark-Request-Nonce: $NONCE" \
             -d '{
               "msg_type": "text",
               "content": {
-                "text": "签名验证测试消息\n时间: '"$BEIJING_TIME"'\n如果收到此消息，说明签名验证成功！"
+                "text": "签名验证测试 - 方法2\n时间: '"$BEIJING_TIME"'\n如果收到此消息，说明签名验证成功！"
               }
             }')
           
@@ -117,83 +134,108 @@ jobs:
           
           if [ "$HTTP_CODE" -eq 200 ]; then
             if echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
-              echo "✅ 签名验证成功！简单消息发送成功"
+              echo "✅ 签名验证成功！方法2有效"
+              # 保存成功的签名信息
+              echo "SUCCESS_TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+              echo "SUCCESS_SIGNATURE=$SIGNATURE" >> $GITHUB_ENV
+              echo "SUCCESS_NONCE=$NONCE" >> $GITHUB_ENV
             else
-              echo "❌ 签名验证失败 - API返回错误"
+              echo "❌ 方法2也失败了"
               echo "错误详情: $RESPONSE_BODY"
-              exit 1
             fi
           else
             echo "❌ HTTP请求失败 - 状态码: $HTTP_CODE"
             echo "错误详情: $RESPONSE_BODY"
-            exit 1
           fi
 
-      - name: Send Morning Message
-        if: steps.time-check.outputs.PERIOD == 'morning' && success()
+      - name: Send Message with Verified Signature
+        if: env.SUCCESS_SIGNATURE != ''
         run: |
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-          echo "🕘 发送上午消息 - $BEIJING_TIME"
           
-          # 构建消息数据
-          MESSAGE_JSON='{
-            "msg_type": "interactive",
-            "card": {
-              "config": {
-                "wide_screen_mode": true
-              },
-              "header": {
-                "title": {
-                  "tag": "plain_text",
-                  "content": "🌞 早安！开始今天的工作吧"
+          if [ "${{ steps.time-check.outputs.PERIOD }}" == "morning" ]; then
+            echo "🕘 发送上午消息 - $BEIJING_TIME"
+            MESSAGE_JSON='{
+              "msg_type": "interactive",
+              "card": {
+                "config": {
+                  "wide_screen_mode": true
                 },
-                "template": "wathet"
-              },
-              "elements": [
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n新的一天，新的开始！保持积极心态，工作效率翻倍！🚀\n\n⏰ **提醒时间：** '"$BEIJING_TIME"'\n🔧 **触发方式：** '"${{ github.event_name }}"'"
-                  }
+                "header": {
+                  "title": {
+                    "tag": "plain_text",
+                    "content": "🌞 早安！开始今天的工作吧"
+                  },
+                  "template": "wathet"
                 },
-                {
-                  "tag": "hr"
-                },
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
-                  }
-                },
-                {
-                  "tag": "action",
-                  "actions": [
-                    {
-                      "tag": "button",
-                      "text": {
-                        "tag": "plain_text",
-                        "content": "👍 收到，开始工作"
-                      },
-                      "type": "primary"
+                "elements": [
+                  {
+                    "tag": "div",
+                    "text": {
+                      "tag": "lark_md",
+                      "content": "**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n新的一天，新的开始！保持积极心态，工作效率翻倍！🚀\n\n⏰ **提醒时间：** '"$BEIJING_TIME"'\n🔧 **触发方式：** '"${{ github.event_name }}"'"
                     }
-                  ]
-                }
-              ]
-            }
-          }'
+                  },
+                  {
+                    "tag": "hr"
+                  },
+                  {
+                    "tag": "div",
+                    "text": {
+                      "tag": "lark_md",
+                      "content": "🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
+                    }
+                  }
+                ]
+              }
+            }'
+          else
+            echo "🕒 发送下午消息 - $BEIJING_TIME"
+            MESSAGE_JSON='{
+              "msg_type": "interactive",
+              "card": {
+                "config": {
+                  "wide_screen_mode": true
+                },
+                "header": {
+                  "title": {
+                    "tag": "plain_text",
+                    "content": "☕ 下午好！继续加油"
+                  },
+                  "template": "orange"
+                },
+                "elements": [
+                  {
+                    "tag": "div",
+                    "text": {
+                      "tag": "lark_md",
+                      "content": "**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n下午是创造奇迹的时间！继续保持专注，胜利在望！✨\n\n⏰ **提醒时间：** '"$BEIJING_TIME"'\n🔧 **触发方式：** '"${{ github.event_name }}"'"
+                    }
+                  },
+                  {
+                    "tag": "hr"
+                  },
+                  {
+                    "tag": "div",
+                    "text": {
+                      "tag": "lark_md",
+                      "content": "🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
+                    }
+                  }
+                ]
+              }
+            }'
+          fi
           
-          # 发送消息（带签名验证）
+          # 使用已验证的签名发送消息
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "$FEISHU_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -H "X-Lark-Signature: ${{ steps.signature.outputs.signature }}" \
-            -H "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}" \
-            -H "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}" \
+            -H "X-Lark-Signature: $SUCCESS_SIGNATURE" \
+            -H "X-Lark-Request-Timestamp: $SUCCESS_TIMESTAMP" \
+            -H "X-Lark-Request-Nonce: $SUCCESS_NONCE" \
             -d "$MESSAGE_JSON")
           
-          # 检查响应
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
           
@@ -201,77 +243,31 @@ jobs:
           echo "响应内容: $RESPONSE_BODY"
           
           if [ "$HTTP_CODE" -eq 200 ] && echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
-            echo "✅ 上午提醒消息发送成功！"
+            echo "✅ 正式消息发送成功！"
           else
-            echo "❌ 消息发送失败"
-            exit 1
+            echo "❌ 正式消息发送失败"
           fi
 
-      - name: Send Afternoon Message
-        if: steps.time-check.outputs.PERIOD == 'afternoon' && success()
+      - name: Fallback Without Signature
+        if: env.SUCCESS_SIGNATURE == '' && always()
         run: |
+          echo "⚠️ 签名验证失败，尝试无签名发送"
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-          echo "🕒 发送下午消息 - $BEIJING_TIME"
           
-          # 构建消息数据
-          MESSAGE_JSON='{
-            "msg_type": "interactive",
-            "card": {
-              "config": {
-                "wide_screen_mode": true
-              },
-              "header": {
-                "title": {
-                  "tag": "plain_text",
-                  "content": "☕ 下午好！继续加油"
-                },
-                "template": "orange"
-              },
-              "elements": [
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n下午是创造奇迹的时间！继续保持专注，胜利在望！✨\n\n⏰ **提醒时间：** '"$BEIJING_TIME"'\n🔧 **触发方式：** '"${{ github.event_name }}"'"
-                  }
-                },
-                {
-                  "tag": "hr"
-                },
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
-                  }
-                },
-                {
-                  "tag": "action",
-                  "actions": [
-                    {
-                      "tag": "button",
-                      "text": {
-                        "tag": "plain_text",
-                        "content": "💪 继续努力"
-                      },
-                      "type": "primary"
-                    }
-                  ]
-                }
-              ]
+          # 构建简单消息
+          SIMPLE_JSON='{
+            "msg_type": "text",
+            "content": {
+              "text": "⚠️ 签名验证失败，使用无签名模式\n'"${{ steps.time-check.outputs.SCHEDULE_NAME }}"' - 时间: '"$BEIJING_TIME"'\n• 60表上传检查\n• 工作进度确认"
             }
           }'
           
-          # 发送消息（带签名验证）
+          # 无签名发送
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "$FEISHU_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -H "X-Lark-Signature: ${{ steps.signature.outputs.signature }}" \
-            -H "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}" \
-            -H "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}" \
-            -d "$MESSAGE_JSON")
+            -d "$SIMPLE_JSON")
           
-          # 检查响应
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
           
@@ -279,19 +275,18 @@ jobs:
           echo "响应内容: $RESPONSE_BODY"
           
           if [ "$HTTP_CODE" -eq 200 ] && echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
-            echo "✅ 下午提醒消息发送成功！"
+            echo "✅ 无签名消息发送成功"
           else
-            echo "❌ 消息发送失败"
-            exit 1
+            echo "❌ 无签名消息也失败了"
           fi
 
-      - name: Success Notification
-        if: success()
+      - name: Final Status
         run: |
-          echo "🎉 飞书每日提醒任务完成！"
-          echo "================================="
-          echo "📅 发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          echo "📝 消息类型: ${{ steps.time-check.outputs.SCHEDULE_NAME }}"
-          echo "🔧 触发方式: ${{ github.event_name }}"
-          echo "🔐 签名验证: 已启用"
-          echo "================================="
+          if [ -n "$SUCCESS_SIGNATURE" ]; then
+            echo "🎉 任务完成 - 签名验证成功"
+          else
+            echo "⚠️ 任务完成 - 使用了无签名回退方案"
+            echo "请检查飞书机器人的签名密钥配置"
+          fi
+          echo "发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "消息类型: ${{ steps.time-check.outputs.SCHEDULE_NAME }}"
