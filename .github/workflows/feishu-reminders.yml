@@ -1,161 +1,92 @@
-name: Feishu Daily Reminders with Test
+name: Test Feishu Bot Connection
 
 on:
-  schedule:
-    - cron: '0 1 * * *'   # UTC 1:00 (北京时间9:00)
-    - cron: '0 7 * * *'   # UTC 7:00 (北京时间15:00)
-  workflow_dispatch:
-    inputs:
-      test_type:
-        description: '选择测试类型'
-        required: true
-        default: 'test'
-        type: choice
-        options:
-          - morning
-          - afternoon
-          - test
+  workflow_dispatch:  # 允许手动触发
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
-  send-feishu-message:
+  test-feishu-bot:
     runs-on: ubuntu-latest
-    
     steps:
-    # 测试消息步骤（手动触发时执行）
-    - name: Send test message
-      if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_type == 'test' }}
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Test Feishu Bot Connection
       run: |
-        TIMESTAMP=$(date +%s)
-        SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
-        
-        curl -X POST \
-          ${{ secrets.FEISHU_WEBHOOK_URL }} \
-          -H 'Content-Type: application/json' \
-          -H "X-Lark-Signature: $SIGN" \
-          -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
+        # 发送测试消息到飞书机器人
+        response=$(curl -s -w "\n%{http_code}" -X POST \
+          "https://open.feishu.cn/open-apis/bot/v2/hook/9057b68c-ebfc-4a5a-9a43-7a878b04b258" \
+          -H "Content-Type: application/json" \
           -d '{
             "msg_type": "interactive",
             "card": {
-              "elements": [{
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "🧪 **测试消息**\n\n这是一条即时测试消息！\n• 表示您的飞书机器人配置成功\n• GitHub Actions 工作流正常运行\n• 签名验证已通过 ✅"
-                  }
-                },
-                {
-                  "tag": "hr"
-                },
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**配置信息：**\n• 发送时间: $(date +"%Y-%m-%d %H:%M:%S %Z")\n• 工作流: ${{ github.workflow }}\n• 运行ID: ${{ github.run_id }}"
-                  }
-                }
-              ],
+              "config": {
+                "wide_screen_mode": true
+              },
               "header": {
-                "template": "green",
                 "title": {
-                  "content": "✅ 测试成功 | ",
-                  "tag": "plain_text"
+                  "tag": "plain_text",
+                  "content": "🤖 GitHub Action 测试"
+                },
+                "template": "blue"
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**✅ 飞书机器人连接测试成功！**\n\n📅 时间：'"$(date)"'\n🔗 仓库：${{ github.repository }}\n🎯 分支：${{ github.ref }}\n👤 触发者：${{ github.actor }}\n\n这是一条来自 GitHub Actions 的自动测试消息，证明飞书机器人配置正常。"
+                  }
+                },
+                {
+                  "tag": "action",
+                  "actions": [
+                    {
+                      "tag": "button",
+                      "text": {
+                        "tag": "plain_text",
+                        "content": "查看仓库"
+                      },
+                      "type": "primary",
+                      "url": "https://github.com/${{ github.repository }}"
+                    }
+                  ]
                 }
-              }
+              ]
             }
-          }'
-    
-    # 上午提醒（定时触发）
-    - name: Setup signature for morning
-      if: ${{ github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'morning') }}
-      run: |
-        TIMESTAMP=$(date +%s)
-        SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
-        echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
-        echo "SIGN=$SIGN" >> $GITHUB_ENV
+          }')
         
-    - name: Send morning reminder
-      if: ${{ github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'morning') }}
-      run: |
-        curl -X POST \
-          ${{ secrets.FEISHU_WEBHOOK_URL }} \
-          -H 'Content-Type: application/json' \
-          -H "X-Lark-Signature: $SIGN" \
-          -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
-          -d '{
-            "msg_type": "interactive",
-            "card": {
-              "elements": [{
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "⏰ **上午工作提醒**\n\n美好的一天开始啦！\n• 检查今日工作计划\n• 今天有60张表要上传吗？\n• 开始专注工作\n• 记得补充水分 💧"
-                  }
-                },
-                {
-                  "tag": "hr"
-                },
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**今日提醒：**\n• 完成主要任务\n• 60表上传了吗？"
-                  }
-                }
-              ],
-              "header": {
-                "template": "blue",
-                "title": {
-                  "content": "🌞 早安提醒 | ",
-                  "tag": "plain_text"
-                }
-              }
-            }
-          }'
-      
-    # 下午提醒（定时触发）
-    - name: Setup signature for afternoon
-      if: ${{ github.event.schedule == '0 7 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'afternoon') }}
-      run: |
-        TIMESTAMP=$(date +%s)
-        SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
-        echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
-        echo "SIGN=$SIGN" >> $GITHUB_ENV
+        # 提取 HTTP 状态码和响应体
+        http_code=$(echo "$response" | tail -n1)
+        response_body=$(echo "$response" | head -n -1)
         
-    - name: Send afternoon reminder
-      if: ${{ github.event.schedule == '0 7 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'afternoon') }}
+        echo "HTTP Status Code: $http_code"
+        echo "Response: $response_body"
+        
+        # 检查是否成功 (HTTP 200 且包含 success)
+        if [ "$http_code" -eq 200 ] && echo "$response_body" | grep -q "success"; then
+          echo "✅ 飞书机器人连接测试成功！"
+          exit 0
+        else
+          echo "❌ 飞书机器人连接失败"
+          echo "错误详情：$response_body"
+          exit 1
+        fi
+
+    - name: Success Notification
+      if: success()
       run: |
-        curl -X POST \
-          ${{ secrets.FEISHU_WEBHOOK_URL }} \
-          -H 'Content-Type: application/json' \
-          -H "X-Lark-Signature: $SIGN" \
-          -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
-          -d '{
-            "msg_type": "interactive",
-            "card": {
-              "elements": [{
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "☕ **下午工作提醒**\n\n下午时光，继续加油！\n• 今天60张表是否上传完成？\n• 规划下午任务安排\n• 适当休息放松\n• 保持高效状态 🚀"
-                  }
-                },
-                {
-                  "tag": "hr"
-                },
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**进度检查：**\n• 上午任务完成情况\n• 下午重点事项\n• 明日计划准备"
-                  }
-                }
-              ],
-              "header": {
-                "template": "wathet",
-                "title": {
-                  "content": "🌅 午后提醒 | ",
-                  "tag": "plain_text"
-                }
-              }
-            }
-          }'
+        echo "🎉 飞书机器人测试完成，消息已成功发送！"
+        echo "请检查飞书群聊是否收到测试消息。"
+
+    - name: Failure Notification
+      if: failure()
+      run: |
+        echo "💥 飞书机器人测试失败！"
+        echo "请检查："
+        echo "1. Webhook URL 是否正确"
+        echo "2. 机器人是否在群聊中启用"
+        echo "3. 网络连接是否正常"
