@@ -25,7 +25,6 @@ jobs:
           
           if [ -z "$FEISHU_WEBHOOK_URL" ]; then
             echo "❌ 错误: FEISHU_WEBHOOK_URL 未配置"
-            echo "请在 GitHub Secrets 中设置 FEISHU_WEBHOOK_URL"
             exit 1
           else
             echo "✅ FEISHU_WEBHOOK_URL 已配置"
@@ -33,7 +32,6 @@ jobs:
           
           if [ -z "$FEISHU_SIGN_SECRET" ]; then
             echo "❌ 错误: FEISHU_SIGN_SECRET 未配置"
-            echo "请在 GitHub Secrets 中设置 FEISHU_SIGN_SECRET"
             exit 1
           else
             echo "✅ FEISHU_SIGN_SECRET 已配置"
@@ -72,18 +70,67 @@ jobs:
           NONCE=$(openssl rand -hex 16)
           echo "nonce=$NONCE" >> $GITHUB_OUTPUT
           
-          # 生成飞书签名
-          SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SIGN_SECRET}"
-          SIGNATURE=$(printf "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
+          # 飞书签名算法：timestamp + "\n" + secret
+          # 注意：必须使用 echo -e 来处理换行符
+          SIGNATURE_STRING="$TIMESTAMP\n$FEISHU_SIGN_SECRET"
+          SIGNATURE=$(echo -e "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
           echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
           
           echo "✅ 签名生成成功"
           echo "Timestamp: $TIMESTAMP"
           echo "Nonce: $NONCE"
           echo "Signature: $SIGNATURE"
+          echo "Signature String (debug): $TIMESTAMP\\n$FEISHU_SIGN_SECRET"
+
+      - name: Test Signature Without Message
+        run: |
+          echo "🧪 测试签名验证（不发送消息）"
+          echo "Timestamp: ${{ steps.signature.outputs.timestamp }}"
+          echo "Nonce: ${{ steps.signature.outputs.nonce }}"
+          echo "Signature: ${{ steps.signature.outputs.signature }}"
+          echo "Webhook URL: $(echo $FEISHU_WEBHOOK_URL | cut -d'/' -f1-5)/***"
+
+      - name: Send Test Message (Simple Text)
+        run: |
+          echo "🧪 发送简单测试消息验证签名"
+          BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          
+          # 发送简单的文本消息测试签名
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "$FEISHU_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Lark-Signature: ${{ steps.signature.outputs.signature }}" \
+            -H "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}" \
+            -H "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}" \
+            -d '{
+              "msg_type": "text",
+              "content": {
+                "text": "签名验证测试消息\n时间: '"$BEIJING_TIME"'\n如果收到此消息，说明签名验证成功！"
+              }
+            }')
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP 状态码: $HTTP_CODE"
+          echo "响应内容: $RESPONSE_BODY"
+          
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            if echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
+              echo "✅ 签名验证成功！简单消息发送成功"
+            else
+              echo "❌ 签名验证失败 - API返回错误"
+              echo "错误详情: $RESPONSE_BODY"
+              exit 1
+            fi
+          else
+            echo "❌ HTTP请求失败 - 状态码: $HTTP_CODE"
+            echo "错误详情: $RESPONSE_BODY"
+            exit 1
+          fi
 
       - name: Send Morning Message
-        if: steps.time-check.outputs.PERIOD == 'morning'
+        if: steps.time-check.outputs.PERIOD == 'morning' && success()
         run: |
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
           echo "🕘 发送上午消息 - $BEIJING_TIME"
@@ -157,12 +204,11 @@ jobs:
             echo "✅ 上午提醒消息发送成功！"
           else
             echo "❌ 消息发送失败"
-            echo "请检查签名密钥是否正确"
             exit 1
           fi
 
       - name: Send Afternoon Message
-        if: steps.time-check.outputs.PERIOD == 'afternoon'
+        if: steps.time-check.outputs.PERIOD == 'afternoon' && success()
         run: |
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
           echo "🕒 发送下午消息 - $BEIJING_TIME"
@@ -236,7 +282,6 @@ jobs:
             echo "✅ 下午提醒消息发送成功！"
           else
             echo "❌ 消息发送失败"
-            echo "请检查签名密钥是否正确"
             exit 1
           fi
 
@@ -250,4 +295,3 @@ jobs:
           echo "🔧 触发方式: ${{ github.event_name }}"
           echo "🔐 签名验证: 已启用"
           echo "================================="
-          echo "请检查飞书群聊是否收到消息 📱"
