@@ -48,7 +48,7 @@ jobs:
 
         # 发送消息
         curl -X POST \
-          "https://open.feishu.cn/open-apis/bot/v2/hook/9057b68c-ebfc-4a5a-9a43-7a878b04b258" \
+          "https://open.feishu.cn/open-apis/bot/v2/hook/90140cc3-1baa-451a-b904-0f73b7dc3172" \
           -H "Content-Type: application/json" \
           -d "{
             \"msg_type\": \"interactive\",
