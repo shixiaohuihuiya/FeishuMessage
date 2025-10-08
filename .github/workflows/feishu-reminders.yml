@@ -15,115 +15,85 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Send Morning Reminder
-      if: github.event.schedule == '0 1 * * *'
+    - name: Determine Message Type
+      id: message-type
       run: |
+        # 获取当前UTC小时
+        CURRENT_HOUR=$(date -u +%H)
+        echo "Current UTC hour: $CURRENT_HOUR"
+        
+        # 如果当前小时在1点到7点之间（包括1点，不包括7点），则为上午；否则为下午
+        if [ $CURRENT_HOUR -ge 1 ] && [ $CURRENT_HOUR -lt 7 ]; then
+          echo "MESSAGE_TYPE=morning" >> $GITHUB_OUTPUT
+        else
+          echo "MESSAGE_TYPE=afternoon" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Send Reminder
+      run: |
+        # 设置变量
+        if [ "${{ steps.message-type.outputs.MESSAGE_TYPE }}" == "morning" ]; then
+          TITLE="🌞 早安！开始今天的工作吧"
+          TEMPLATE="wathet"
+          CONTENT="**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n新的一天，新的开始！保持积极心态，工作效率翻倍！🚀"
+          BUTTON_TEXT="👍 收到，开始工作"
+          TIPS="🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
+        else
+          TITLE="☕ 下午好！继续加油"
+          TEMPLATE="orange"
+          CONTENT="**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
+          BUTTON_TEXT="💪 继续努力"
+          TIPS="🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
+        fi
+
+        # 发送消息
         curl -X POST \
           "https://open.feishu.cn/open-apis/bot/v2/hook/9057b68c-ebfc-4a5a-9a43-7a878b04b258" \
           -H "Content-Type: application/json" \
-          -d '{
-            "msg_type": "interactive",
-            "card": {
-              "config": {
-                "wide_screen_mode": true
+          -d "{
+            \"msg_type\": \"interactive\",
+            \"card\": {
+              \"config\": {
+                \"wide_screen_mode\": true
               },
-              "header": {
-                "title": {
-                  "tag": "plain_text",
-                  "content": "🌞 早安！开始今天的工作吧"
+              \"header\": {
+                \"title\": {
+                  \"tag\": \"plain_text\",
+                  \"content\": \"$TITLE\"
                 },
-                "template": "wathet"
+                \"template\": \"$TEMPLATE\"
               },
-              "elements": [
+              \"elements\": [
                 {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n⏰ **提醒时间：** '"$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"'\n\n💫 **今日寄语：**\n新的一天，新的开始！保持积极心态，工作效率翻倍！🚀"
+                  \"tag\": \"div\",
+                  \"text\": {
+                    \"tag\": \"lark_md\",
+                    \"content\": \"$CONTENT\n\n⏰ **提醒时间：** $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')\"
                   }
                 },
                 {
-                  "tag": "hr"
+                  \"tag\": \"hr\"
                 },
                 {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
+                  \"tag\": \"div\",
+                  \"text\": {
+                    \"tag\": \"lark_md\",
+                    \"content\": \"$TIPS\"
                   }
                 },
                 {
-                  "tag": "action",
-                  "actions": [
+                  \"tag\": \"action\",
+                  \"actions\": [
                     {
-                      "tag": "button",
-                      "text": {
-                        "tag": "plain_text",
-                        "content": "👍 收到，开始工作"
+                      \"tag\": \"button\",
+                      \"text\": {
+                        \"tag\": \"plain_text\",
+                        \"content\": \"$BUTTON_TEXT\"
                       },
-                      "type": "primary"
+                      \"type\": \"primary\"
                     }
                   ]
                 }
               ]
             }
-          }'
-
-    - name: Send Afternoon Reminder
-      if: github.event.schedule == '0 7 * * *'
-      run: |
-        curl -X POST \
-          "https://open.feishu.cn/open-apis/bot/v2/hook/9057b68c-ebfc-4a5a-9a43-7a878b04b258" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "msg_type": "interactive",
-            "card": {
-              "config": {
-                "wide_screen_mode": true
-              },
-              "header": {
-                "title": {
-                  "tag": "plain_text",
-                  "content": "☕ 下午好！继续加油"
-                },
-                "template": "orange"
-              },
-              "elements": [
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n⏰ **提醒时间：** '"$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"'\n\n💪 **加油鼓励：**\n下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
-                  }
-                },
-                {
-                  "tag": "hr"
-                },
-                {
-                  "tag": "div",
-                  "text": {
-                    "tag": "lark_md",
-                    "content": "🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
-                  }
-                },
-                {
-                  "tag": "action",
-                  "actions": [
-                    {
-                      "tag": "button",
-                      "text": {
-                        "tag": "plain_text",
-                        "content": "💪 继续努力"
-                      },
-                      "type": "primary"
-                    }
-                  ]
-                }
-              ]
-            }
-          }'
-
-    - name: Log Success
-      run: |
-        echo "✅ 飞书提醒消息发送成功！"
-        echo "发送时间：$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          }"
