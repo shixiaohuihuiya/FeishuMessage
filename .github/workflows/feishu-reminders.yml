@@ -1,21 +1,72 @@
-# 飞书每日消息提醒  github actions 版本
-
-name: Feishu Daily Reminders with Signature
+name: Feishu Daily Reminders with Test
 
 on:
   schedule:
     - cron: '0 1 * * *'   # UTC 1:00 (北京时间9:00)
     - cron: '0 7 * * *'   # UTC 7:00 (北京时间15:00)
   workflow_dispatch:
+    inputs:
+      test_type:
+        description: '选择测试类型'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - morning
+          - afternoon
+          - test
 
 jobs:
   send-feishu-message:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Setup signature for morning reminder
-      if: github.event.schedule == '0 1 * * *'
-      id: sign_morning
+    # 测试消息步骤（手动触发时执行）
+    - name: Send test message
+      if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_type == 'test' }}
+      run: |
+        TIMESTAMP=$(date +%s)
+        SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
+        
+        curl -X POST \
+          ${{ secrets.FEISHU_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -H "X-Lark-Signature: $SIGN" \
+          -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
+          -d '{
+            "msg_type": "interactive",
+            "card": {
+              "elements": [{
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "🧪 **测试消息**\n\n这是一条即时测试消息！\n• 表示您的飞书机器人配置成功\n• GitHub Actions 工作流正常运行\n• 签名验证已通过 ✅"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**配置信息：**\n• 发送时间: $(date +"%Y-%m-%d %H:%M:%S %Z")\n• 工作流: ${{ github.workflow }}\n• 运行ID: ${{ github.run_id }}"
+                  }
+                }
+              ],
+              "header": {
+                "template": "green",
+                "title": {
+                  "content": "✅ 测试成功 | ",
+                  "tag": "plain_text"
+                }
+              }
+            }
+          }'
+    
+    # 上午提醒（定时触发）
+    - name: Setup signature for morning
+      if: ${{ github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'morning') }}
       run: |
         TIMESTAMP=$(date +%s)
         SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
@@ -23,7 +74,7 @@ jobs:
         echo "SIGN=$SIGN" >> $GITHUB_ENV
         
     - name: Send morning reminder
-      if: github.event.schedule == '0 1 * * *'
+      if: ${{ github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'morning') }}
       run: |
         curl -X POST \
           ${{ secrets.FEISHU_WEBHOOK_URL }} \
@@ -37,7 +88,7 @@ jobs:
                   "tag": "div",
                   "text": {
                     "tag": "lark_md",
-                    "content": "⏰ **上午工作提醒**\n\n美好的一天开始啦！\n• 检查今日工作计划\n• 今天有60表要上传吗？\n• 开始专注工作\n• 记得补充水分 💧"
+                    "content": "⏰ **上午工作提醒**\n\n美好的一天开始啦！\n• 检查今日工作计划\n• 今天有60张表要上传吗？\n• 开始专注工作\n• 记得补充水分 💧"
                   }
                 },
                 {
@@ -61,9 +112,9 @@ jobs:
             }
           }'
       
-    - name: Setup signature for afternoon reminder
-      if: github.event.schedule == '0 7 * * *'
-      id: sign_afternoon
+    # 下午提醒（定时触发）
+    - name: Setup signature for afternoon
+      if: ${{ github.event.schedule == '0 7 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'afternoon') }}
       run: |
         TIMESTAMP=$(date +%s)
         SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
@@ -71,7 +122,7 @@ jobs:
         echo "SIGN=$SIGN" >> $GITHUB_ENV
         
     - name: Send afternoon reminder
-      if: github.event.schedule == '0 7 * * *'
+      if: ${{ github.event.schedule == '0 7 * * *' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'afternoon') }}
       run: |
         curl -X POST \
           ${{ secrets.FEISHU_WEBHOOK_URL }} \
