@@ -1,26 +1,35 @@
-# 飞书每日提醒
+# 飞书每日消息提醒  github actions 版本
 
-name: Feishu Daily Reminders
+name: Feishu Daily Reminders with Signature
 
 on:
   schedule:
-    # 每天上午9点 (UTC+8 北京时间)
-    - cron: '0 1 * * *'   # UTC时间1点 = 北京时间9点
-    # 每天下午3点 (UTC+8 北京时间)
-    - cron: '0 7 * * *'   # UTC时间7点 = 北京时间15点
-  workflow_dispatch:  # 允许手动触发
+    - cron: '0 1 * * *'   # UTC 1:00 (北京时间9:00)
+    - cron: '0 7 * * *'   # UTC 7:00 (北京时间15:00)
+  workflow_dispatch:
 
 jobs:
   send-feishu-message:
     runs-on: ubuntu-latest
     
     steps:
+    - name: Setup signature for morning reminder
+      if: github.event.schedule == '0 1 * * *'
+      id: sign_morning
+      run: |
+        TIMESTAMP=$(date +%s)
+        SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
+        echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+        echo "SIGN=$SIGN" >> $GITHUB_ENV
+        
     - name: Send morning reminder
-      if: github.event.schedule == '0 1 * * *'  # 只在上午9点触发时执行
+      if: github.event.schedule == '0 1 * * *'
       run: |
         curl -X POST \
           ${{ secrets.FEISHU_WEBHOOK_URL }} \
           -H 'Content-Type: application/json' \
+          -H "X-Lark-Signature: $SIGN" \
+          -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
           -d '{
             "msg_type": "interactive",
             "card": {
@@ -38,7 +47,7 @@ jobs:
                   "tag": "div",
                   "text": {
                     "tag": "lark_md",
-                    "content": "**今日提醒：**\n• 完成主要任务\n• 60表上传了吗？\"
+                    "content": "**今日提醒：**\n• 完成主要任务\n• 60表上传了吗？"
                   }
                 }
               ],
@@ -52,12 +61,23 @@ jobs:
             }
           }'
       
+    - name: Setup signature for afternoon reminder
+      if: github.event.schedule == '0 7 * * *'
+      id: sign_afternoon
+      run: |
+        TIMESTAMP=$(date +%s)
+        SIGN=$(printf "$TIMESTAMP\n${{ secrets.FEISHU_SIGN_SECRET }}" | openssl dgst -sha256 -hex | awk '{print $2}')
+        echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+        echo "SIGN=$SIGN" >> $GITHUB_ENV
+        
     - name: Send afternoon reminder
-      if: github.event.schedule == '0 7 * * *'  # 只在下午3点触发时执行
+      if: github.event.schedule == '0 7 * * *'
       run: |
         curl -X POST \
           ${{ secrets.FEISHU_WEBHOOK_URL }} \
           -H 'Content-Type: application/json' \
+          -H "X-Lark-Signature: $SIGN" \
+          -H "X-Lark-Request-Timestamp: $TIMESTAMP" \
           -d '{
             "msg_type": "interactive",
             "card": {
