@@ -10,7 +10,7 @@ on:
 
 env:
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-  FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+  FEISHU_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}
 
 jobs:
   send-daily-reminder:
