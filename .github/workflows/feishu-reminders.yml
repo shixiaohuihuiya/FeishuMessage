@@ -10,7 +10,7 @@ on:
 
 env:
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-  FEISHU_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}
+  FEISHU_SIGN_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}  # 修正后的变量名
 
 jobs:
   send-daily-reminder:
@@ -22,18 +22,19 @@ jobs:
 
     - name: Validate Configuration
       run: |
+        echo "🔧 检查环境变量配置..."
         if [ -z "$FEISHU_WEBHOOK_URL" ]; then
           echo "❌ 错误: FEISHU_WEBHOOK_URL 未配置"
           echo "请在 GitHub Secrets 中设置 FEISHU_WEBHOOK_URL"
           exit 1
+        else
+          echo "✅ FEISHU_WEBHOOK_URL 已配置"
         fi
         
-        if [ -z "$FEISHU_SECRET" ]; then
-          echo "⚠️ 警告: FEISHU_SECRET 未配置，将发送无签名验证的消息"
+        if [ -z "$FEISHU_SIGN_SECRET" ]; then
+          echo "⚠️ 警告: FEISHU_SIGN_SECRET 未配置，将发送无签名验证的消息"
         else
-          echo "✅ 配置验证通过"
-          echo "Webhook URL: $(echo $FEISHU_WEBHOOK_URL | cut -d'/' -f1-5)/***"
-          echo "Secret: ***"
+          echo "✅ FEISHU_SIGN_SECRET 已配置"
         fi
 
     - name: Calculate Beijing Time and Message Type
@@ -41,22 +42,21 @@ jobs:
       run: |
         # 获取当前UTC时间
         UTC_HOUR=$(date -u +%H)
-        UTC_MINUTE=$(date -u +%M)
-        echo "当前UTC时间: ${UTC_HOUR}:${UTC_MINUTE}"
+        echo "当前UTC时间: ${UTC_HOUR}:00"
         
         # 转换为北京时间 (UTC+8)
         BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
-        echo "当前北京时间: ${BEIJING_HOUR}:${UTC_MINUTE}"
+        echo "当前北京时间: ${BEIJING_HOUR}:00"
         
         # 判断消息类型
         if [ $BEIJING_HOUR -lt 12 ]; then
           MSG_TYPE="morning"
           SCHEDULE_NAME="上午提醒"
-          echo "发送上午提醒消息"
+          echo "🕘 发送上午提醒消息"
         else
           MSG_TYPE="afternoon" 
           SCHEDULE_NAME="下午提醒"
-          echo "发送下午提醒消息"
+          echo "🕒 发送下午提醒消息"
         fi
         
         # 触发类型
@@ -82,10 +82,10 @@ jobs:
         NONCE=$(openssl rand -hex 16)
         echo "nonce=${NONCE}" >> $GITHUB_OUTPUT
         
-        # 如果有SECRET，生成签名
-        if [ -n "$FEISHU_SECRET" ]; then
+        # 如果有签名密钥，生成签名
+        if [ -n "$FEISHU_SIGN_SECRET" ]; then
           # 飞书签名算法：timestamp + "\n" + secret
-          SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SECRET}"
+          SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SIGN_SECRET}"
           
           # 计算签名 (base64 encoded SHA256)
           SIGNATURE=$(printf "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
@@ -96,7 +96,7 @@ jobs:
           echo "Signature: ${SIGNATURE}"
         else
           echo "signature=" >> $GITHUB_OUTPUT
-          echo "ℹ️ 未生成签名 (FEISHU_SECRET 未设置)"
+          echo "ℹ️ 未生成签名 (FEISHU_SIGN_SECRET 未设置)"
         fi
 
     - name: Prepare Message Content
@@ -265,18 +265,6 @@ EOF
         echo "📅 发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
         echo "📝 消息类型: ${{ steps.time-calc.outputs.SCHEDULE_NAME }}"
         echo "🔧 触发方式: ${{ steps.time-calc.outputs.TRIGGER_TYPE }}"
-        echo "🏷️ 签名验证: $([ -n "${{ steps.signature.outputs.signature }}" ] && echo "已启用" || echo "未启用")"
+        echo "🏷️ 签名验证: $([ -n "$FEISHU_SIGN_SECRET" ] && echo "已启用" || echo "未启用")"
         echo "================================="
         echo "请检查飞书群聊是否收到消息 📱"
-
-    - name: Failure Notification
-      if: failure()
-      run: |
-        echo "💥 飞书消息发送失败！"
-        echo "请检查以下配置："
-        echo "1. ✅ FEISHU_WEBHOOK_URL 是否正确配置"
-        echo "2. ✅ FEISHU_SECRET 是否与飞书机器人配置一致"
-        echo "3. 🔗 网络连接是否正常"
-        echo "4. ⏰ 飞书机器人是否在群聊中启用"
-        echo "5. 🔑 机器人权限是否足够"
-        exit 1
