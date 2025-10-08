@@ -1,4 +1,4 @@
-name: Feishu Daily Reminder
+name: Feishu Daily Reminder with Signature
 
 on:
   workflow_dispatch:  # 手动触发
@@ -8,27 +8,79 @@ on:
     # 北京时间下午3点 (UTC+8) = UTC时间早上7点
     - cron: '0 7 * * *'
 
+env:
+  FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+  FEISHU_SIGN_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}
+
 jobs:
   send-daily-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: Check Current Time
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Configuration
+        run: |
+          echo "🔧 检查环境变量配置..."
+          
+          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
+            echo "❌ 错误: FEISHU_WEBHOOK_URL 未配置"
+            echo "请在 GitHub Secrets 中设置 FEISHU_WEBHOOK_URL"
+            exit 1
+          else
+            echo "✅ FEISHU_WEBHOOK_URL 已配置"
+          fi
+          
+          if [ -z "$FEISHU_SIGN_SECRET" ]; then
+            echo "❌ 错误: FEISHU_SIGN_SECRET 未配置"
+            echo "请在 GitHub Secrets 中设置 FEISHU_SIGN_SECRET"
+            exit 1
+          else
+            echo "✅ FEISHU_SIGN_SECRET 已配置"
+          fi
+
+      - name: Calculate Beijing Time
         id: time-check
         run: |
-          # 获取当前UTC时间并转换为北京时间
+          # 获取当前UTC时间
           UTC_HOUR=$(date -u +%H)
-          BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
+          echo "当前UTC时间: $UTC_HOUR:00"
           
-          # 判断是上午还是下午
+          # 转换为北京时间 (UTC+8)
+          BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
+          echo "当前北京时间: $BEIJING_HOUR:00"
+          
+          # 判断消息类型
           if [ $BEIJING_HOUR -lt 12 ]; then
             echo "PERIOD=morning" >> $GITHUB_OUTPUT
             echo "SCHEDULE_NAME=上午提醒" >> $GITHUB_OUTPUT
-            echo "当前是北京时间上午，发送上午提醒"
+            echo "🕘 发送上午提醒消息"
           else
             echo "PERIOD=afternoon" >> $GITHUB_OUTPUT
             echo "SCHEDULE_NAME=下午提醒" >> $GITHUB_OUTPUT
-            echo "当前是北京时间下午，发送下午提醒"
+            echo "🕒 发送下午提醒消息"
           fi
+
+      - name: Generate Signature
+        id: signature
+        run: |
+          # 生成时间戳（秒级）
+          TIMESTAMP=$(date +%s)
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          
+          # 生成随机数
+          NONCE=$(openssl rand -hex 16)
+          echo "nonce=$NONCE" >> $GITHUB_OUTPUT
+          
+          # 生成飞书签名
+          SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SIGN_SECRET}"
+          SIGNATURE=$(printf "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
+          
+          echo "✅ 签名生成成功"
+          echo "Timestamp: $TIMESTAMP"
+          echo "Nonce: $NONCE"
+          echo "Signature: $SIGNATURE"
 
       - name: Send Morning Message
         if: steps.time-check.outputs.PERIOD == 'morning'
@@ -77,8 +129,7 @@ jobs:
                         "tag": "plain_text",
                         "content": "👍 收到，开始工作"
                       },
-                      "type": "primary",
-                      "url": "https://github.com/'"$GITHUB_REPOSITORY"'"
+                      "type": "primary"
                     }
                   ]
                 }
@@ -86,10 +137,13 @@ jobs:
             }
           }'
           
-          # 发送消息
+          # 发送消息（带签名验证）
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            "${{ secrets.FEISHU_WEBHOOK_URL }}" \
+            "$FEISHU_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
+            -H "X-Lark-Signature: ${{ steps.signature.outputs.signature }}" \
+            -H "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}" \
+            -H "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}" \
             -d "$MESSAGE_JSON")
           
           # 检查响应
@@ -103,6 +157,7 @@ jobs:
             echo "✅ 上午提醒消息发送成功！"
           else
             echo "❌ 消息发送失败"
+            echo "请检查签名密钥是否正确"
             exit 1
           fi
 
@@ -153,8 +208,7 @@ jobs:
                         "tag": "plain_text",
                         "content": "💪 继续努力"
                       },
-                      "type": "primary",
-                      "url": "https://github.com/'"$GITHUB_REPOSITORY"'"
+                      "type": "primary"
                     }
                   ]
                 }
@@ -162,10 +216,13 @@ jobs:
             }
           }'
           
-          # 发送消息
+          # 发送消息（带签名验证）
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            "${{ secrets.FEISHU_WEBHOOK_URL }}" \
+            "$FEISHU_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
+            -H "X-Lark-Signature: ${{ steps.signature.outputs.signature }}" \
+            -H "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}" \
+            -H "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}" \
             -d "$MESSAGE_JSON")
           
           # 检查响应
@@ -179,6 +236,7 @@ jobs:
             echo "✅ 下午提醒消息发送成功！"
           else
             echo "❌ 消息发送失败"
+            echo "请检查签名密钥是否正确"
             exit 1
           fi
 
@@ -190,5 +248,6 @@ jobs:
           echo "📅 发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
           echo "📝 消息类型: ${{ steps.time-check.outputs.SCHEDULE_NAME }}"
           echo "🔧 触发方式: ${{ github.event_name }}"
+          echo "🔐 签名验证: 已启用"
           echo "================================="
           echo "请检查飞书群聊是否收到消息 📱"
