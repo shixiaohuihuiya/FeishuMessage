@@ -1,4 +1,4 @@
-name: Feishu Daily Reminder with Signature
+name: Feishu Daily Reminder
 
 on:
   workflow_dispatch:  # 手动触发
@@ -10,168 +10,169 @@ on:
 
 env:
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-  FEISHU_SIGN_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}  # 修正后的变量名
+  FEISHU_SIGN_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}
 
 jobs:
   send-daily-reminder:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Validate Configuration
-      run: |
-        echo "🔧 检查环境变量配置..."
-        if [ -z "$FEISHU_WEBHOOK_URL" ]; then
-          echo "❌ 错误: FEISHU_WEBHOOK_URL 未配置"
-          echo "请在 GitHub Secrets 中设置 FEISHU_WEBHOOK_URL"
-          exit 1
-        else
-          echo "✅ FEISHU_WEBHOOK_URL 已配置"
-        fi
-        
-        if [ -z "$FEISHU_SIGN_SECRET" ]; then
-          echo "⚠️ 警告: FEISHU_SIGN_SECRET 未配置，将发送无签名验证的消息"
-        else
-          echo "✅ FEISHU_SIGN_SECRET 已配置"
-        fi
-
-    - name: Calculate Beijing Time and Message Type
-      id: time-calc
-      run: |
-        # 获取当前UTC时间
-        UTC_HOUR=$(date -u +%H)
-        echo "当前UTC时间: ${UTC_HOUR}:00"
-        
-        # 转换为北京时间 (UTC+8)
-        BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
-        echo "当前北京时间: ${BEIJING_HOUR}:00"
-        
-        # 判断消息类型
-        if [ $BEIJING_HOUR -lt 12 ]; then
-          MSG_TYPE="morning"
-          SCHEDULE_NAME="上午提醒"
-          echo "🕘 发送上午提醒消息"
-        else
-          MSG_TYPE="afternoon" 
-          SCHEDULE_NAME="下午提醒"
-          echo "🕒 发送下午提醒消息"
-        fi
-        
-        # 触发类型
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          TRIGGER_TYPE="手动触发"
-        else
-          TRIGGER_TYPE="自动定时"
-        fi
-        
-        echo "MESSAGE_TYPE=${MSG_TYPE}" >> $GITHUB_OUTPUT
-        echo "SCHEDULE_NAME=${SCHEDULE_NAME}" >> $GITHUB_OUTPUT
-        echo "TRIGGER_TYPE=${TRIGGER_TYPE}" >> $GITHUB_OUTPUT
-        echo "BEIJING_HOUR=${BEIJING_HOUR}" >> $GITHUB_OUTPUT
-
-    - name: Generate Feishu Signature
-      id: signature
-      run: |
-        # 生成时间戳（秒级）
-        TIMESTAMP=$(date +%s)
-        echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
-        
-        # 生成随机数
-        NONCE=$(openssl rand -hex 16)
-        echo "nonce=${NONCE}" >> $GITHUB_OUTPUT
-        
-        # 如果有签名密钥，生成签名
-        if [ -n "$FEISHU_SIGN_SECRET" ]; then
-          # 飞书签名算法：timestamp + "\n" + secret
-          SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SIGN_SECRET}"
+      - name: Validate Configuration
+        run: |
+          echo "🔧 检查环境变量配置..."
           
-          # 计算签名 (base64 encoded SHA256)
-          SIGNATURE=$(printf "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
-          echo "signature=${SIGNATURE}" >> $GITHUB_OUTPUT
-          echo "✅ 签名生成成功"
-          echo "Timestamp: ${TIMESTAMP}"
-          echo "Nonce: ${NONCE}"
-          echo "Signature: ${SIGNATURE}"
-        else
-          echo "signature=" >> $GITHUB_OUTPUT
-          echo "ℹ️ 未生成签名 (FEISHU_SIGN_SECRET 未设置)"
-        fi
-
-    - name: Prepare Message Content
-      id: message-content
-      run: |
-        # 获取北京时间
-        BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-        echo "beijing_time=${BEIJING_TIME}" >> $GITHUB_OUTPUT
-        
-        # 上午消息内容
-        if [ "${{ steps.time-calc.outputs.MESSAGE_TYPE }}" == "morning" ]; then
-          echo "TITLE=🌞 早安！开始今天的工作吧" >> $GITHUB_OUTPUT
-          echo "TEMPLATE=wathet" >> $GITHUB_OUTPUT
-          echo "BUTTON_TEXT=👍 收到，开始工作" >> $GITHUB_OUTPUT
+          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
+            echo "❌ 错误: FEISHU_WEBHOOK_URL 未配置"
+            echo "请在 GitHub Secrets 中设置 FEISHU_WEBHOOK_URL"
+            exit 1
+          else
+            echo "✅ FEISHU_WEBHOOK_URL 已配置"
+          fi
           
-          # 随机上午鼓励语
-          MORNING_TIPS=(
-            "清晨的阳光带来新的希望，今天又是充满机遇的一天！✨"
-            "每一天都是新的开始，每一次努力都在积累成功！💪"
-            "用微笑开始新的一天，用行动创造美好成果！🚀"
-            "保持积极心态，工作效率自然提升！今天也是充满希望的一天！🌈"
-            "相信自己，今天的你比昨天更优秀！🌟"
+          if [ -z "$FEISHU_SIGN_SECRET" ]; then
+            echo "⚠️ 警告: FEISHU_SIGN_SECRET 未配置，将发送无签名验证的消息"
+          else
+            echo "✅ FEISHU_SIGN_SECRET 已配置"
+          fi
+
+      - name: Calculate Beijing Time
+        id: time-calc
+        run: |
+          # 获取当前UTC时间
+          UTC_HOUR=$(date -u +%H)
+          UTC_MINUTE=$(date -u +%M)
+          echo "当前UTC时间: ${UTC_HOUR}:${UTC_MINUTE}"
+          
+          # 转换为北京时间 (UTC+8)
+          BEIJING_HOUR=$(( (UTC_HOUR + 8) % 24 ))
+          echo "当前北京时间: ${BEIJING_HOUR}:${UTC_MINUTE}"
+          
+          # 判断消息类型
+          if [ $BEIJING_HOUR -lt 12 ]; then
+            MSG_TYPE="morning"
+            SCHEDULE_NAME="上午提醒"
+            echo "🕘 发送上午提醒消息"
+          else
+            MSG_TYPE="afternoon" 
+            SCHEDULE_NAME="下午提醒"
+            echo "🕒 发送下午提醒消息"
+          fi
+          
+          # 触发类型
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TRIGGER_TYPE="手动触发"
+          else
+            TRIGGER_TYPE="自动定时"
+          fi
+          
+          echo "MESSAGE_TYPE=$MSG_TYPE" >> $GITHUB_OUTPUT
+          echo "SCHEDULE_NAME=$SCHEDULE_NAME" >> $GITHUB_OUTPUT
+          echo "TRIGGER_TYPE=$TRIGGER_TYPE" >> $GITHUB_OUTPUT
+          echo "BEIJING_HOUR=$BEIJING_HOUR" >> $GITHUB_OUTPUT
+
+      - name: Generate Signature
+        id: signature
+        run: |
+          # 生成时间戳（秒级）
+          TIMESTAMP=$(date +%s)
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          
+          # 生成随机数
+          NONCE=$(openssl rand -hex 16)
+          echo "nonce=$NONCE" >> $GITHUB_OUTPUT
+          
+          # 如果有签名密钥，生成签名
+          if [ -n "$FEISHU_SIGN_SECRET" ]; then
+            # 飞书签名算法：timestamp + "\n" + secret
+            SIGNATURE_STRING="${TIMESTAMP}\n${FEISHU_SIGN_SECRET}"
+            
+            # 计算签名 (base64 encoded SHA256)
+            SIGNATURE=$(printf "$SIGNATURE_STRING" | openssl dgst -sha256 -binary | base64)
+            echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
+            echo "✅ 签名生成成功"
+            echo "Timestamp: $TIMESTAMP"
+            echo "Nonce: $NONCE"
+            echo "Signature: $SIGNATURE"
+          else
+            echo "signature=" >> $GITHUB_OUTPUT
+            echo "ℹ️ 未生成签名 (FEISHU_SIGN_SECRET 未设置)"
+          fi
+
+      - name: Prepare Message Content
+        id: message-content
+        run: |
+          # 获取北京时间
+          BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          echo "beijing_time=$BEIJING_TIME" >> $GITHUB_OUTPUT
+          
+          # 上午消息内容
+          if [ "${{ steps.time-calc.outputs.MESSAGE_TYPE }}" == "morning" ]; then
+            echo "TITLE=🌞 早安！开始今天的工作吧" >> $GITHUB_OUTPUT
+            echo "TEMPLATE=wathet" >> $GITHUB_OUTPUT
+            echo "BUTTON_TEXT=👍 收到，开始工作" >> $GITHUB_OUTPUT
+            
+            # 随机上午鼓励语
+            MORNING_TIPS=(
+              "清晨的阳光带来新的希望，今天又是充满机遇的一天！✨"
+              "每一天都是新的开始，每一次努力都在积累成功！💪"
+              "用微笑开始新的一天，用行动创造美好成果！🚀"
+              "保持积极心态，工作效率自然提升！今天也是充满希望的一天！🌈"
+              "相信自己，今天的你比昨天更优秀！🌟"
+            )
+            INDEX=$(( RANDOM % ${#MORNING_TIPS[@]} ))
+            SELECTED_TIP="${MORNING_TIPS[$INDEX]}"
+            
+            CONTENT="**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n$SELECTED_TIP"
+            echo "CONTENT=$CONTENT" >> $GITHUB_OUTPUT
+            
+            TIPS="🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
+            echo "TIPS=$TIPS" >> $GITHUB_OUTPUT
+            
+          # 下午消息内容  
+          else
+            echo "TITLE=☕ 下午好！继续加油" >> $GITHUB_OUTPUT
+            echo "TEMPLATE=orange" >> $GITHUB_OUTPUT
+            echo "BUTTON_TEXT=💪 继续努力" >> $GITHUB_OUTPUT
+            
+            # 随机下午鼓励语
+            AFTERNOON_TIPS=(
+              "下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
+              "坚持就是胜利，下午的工作同样重要！💪"
+              "喝杯咖啡，调整状态，继续向目标前进！🚀"
+              "每一次坚持都在向成功靠近，下午继续加油！🌈"
+              "保持节奏，稳扎稳打，今天的目标一定能完成！🌟"
+            )
+            INDEX=$(( RANDOM % ${#AFTERNOON_TIPS[@]} ))
+            SELECTED_TIP="${AFTERNOON_TIPS[$INDEX]}"
+            
+            CONTENT="**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n$SELECTED_TIP"
+            echo "CONTENT=$CONTENT" >> $GITHUB_OUTPUT
+            
+            TIPS="🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
+            echo "TIPS=$TIPS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Message to Feishu
+        run: |
+          # 构建请求头
+          HEADERS=(
+            "-H" "Content-Type: application/json"
           )
-          INDEX=$(( RANDOM % ${#MORNING_TIPS[@]} ))
-          SELECTED_TIP="${MORNING_TIPS[$INDEX]}"
           
-          CONTENT="**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n${SELECTED_TIP}"
-          echo "CONTENT=${CONTENT}" >> $GITHUB_OUTPUT
+          # 如果有签名，添加到请求头
+          if [ -n "${{ steps.signature.outputs.signature }}" ]; then
+            HEADERS+=("-H" "X-Lark-Signature: ${{ steps.signature.outputs.signature }}")
+            HEADERS+=("-H" "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}")
+            HEADERS+=("-H" "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}")
+            echo "🔐 使用签名验证发送消息"
+          else
+            echo "ℹ️ 发送无签名验证的消息"
+          fi
           
-          TIPS="🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
-          echo "TIPS=${TIPS}" >> $GITHUB_OUTPUT
-          
-        # 下午消息内容  
-        else
-          echo "TITLE=☕ 下午好！继续加油" >> $GITHUB_OUTPUT
-          echo "TEMPLATE=orange" >> $GITHUB_OUTPUT
-          echo "BUTTON_TEXT=💪 继续努力" >> $GITHUB_OUTPUT
-          
-          # 随机下午鼓励语
-          AFTERNOON_TIPS=(
-            "下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
-            "坚持就是胜利，下午的工作同样重要！💪"
-            "喝杯咖啡，调整状态，继续向目标前进！🚀"
-            "每一次坚持都在向成功靠近，下午继续加油！🌈"
-            "保持节奏，稳扎稳打，今天的目标一定能完成！🌟"
-          )
-          INDEX=$(( RANDOM % ${#AFTERNOON_TIPS[@]} ))
-          SELECTED_TIP="${AFTERNOON_TIPS[$INDEX]}"
-          
-          CONTENT="**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n${SELECTED_TIP}"
-          echo "CONTENT=${CONTENT}" >> $GITHUB_OUTPUT
-          
-          TIPS="🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
-          echo "TIPS=${TIPS}" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Send Message to Feishu
-      run: |
-        # 构建请求头
-        HEADERS=(
-          "-H" "Content-Type: application/json"
-        )
-        
-        # 如果有签名，添加到请求头
-        if [ -n "${{ steps.signature.outputs.signature }}" ]; then
-          HEADERS+=("-H" "X-Lark-Signature: ${{ steps.signature.outputs.signature }}")
-          HEADERS+=("-H" "X-Lark-Request-Timestamp: ${{ steps.signature.outputs.timestamp }}")
-          HEADERS+=("-H" "X-Lark-Request-Nonce: ${{ steps.signature.outputs.nonce }}")
-          echo "🔐 使用签名验证发送消息"
-        else
-          echo "ℹ️ 发送无签名验证的消息"
-        fi
-        
-        # 构建请求数据
-        REQUEST_JSON=$(cat <<EOF
+          # 构建请求数据
+          REQUEST_JSON=$(cat <<EOF
 {
   "msg_type": "interactive",
   "card": {
@@ -221,50 +222,62 @@ jobs:
   }
 }
 EOF
-        )
-        
-        echo "📤 发送消息到飞书..."
-        echo "URL: $(echo $FEISHU_WEBHOOK_URL | cut -d'/' -f1-5)/***"
-        
-        # 发送请求
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-          "$FEISHU_WEBHOOK_URL" \
-          "${HEADERS[@]}" \
-          -d "$REQUEST_JSON")
-        
-        # 解析响应
-        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-        RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
-        
-        echo "HTTP 状态码: $HTTP_CODE"
-        echo "响应内容: $RESPONSE_BODY"
-        
-        # 验证响应
-        if [ "$HTTP_CODE" -eq 200 ]; then
-          if echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
-            echo "✅ 飞书消息发送成功！"
-            echo "📝 消息类型: ${{ steps.time-calc.outputs.SCHEDULE_NAME }}"
-            echo "⏰ 发送时间: ${{ steps.message-content.outputs.beijing_time }}"
+          )
+          
+          echo "📤 发送消息到飞书..."
+          echo "URL: $(echo $FEISHU_WEBHOOK_URL | cut -d'/' -f1-5)/***"
+          
+          # 发送请求
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "$FEISHU_WEBHOOK_URL" \
+            "${HEADERS[@]}" \
+            -d "$REQUEST_JSON")
+          
+          # 解析响应
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP 状态码: $HTTP_CODE"
+          echo "响应内容: $RESPONSE_BODY"
+          
+          # 验证响应
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            if echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
+              echo "✅ 飞书消息发送成功！"
+              echo "📝 消息类型: ${{ steps.time-calc.outputs.SCHEDULE_NAME }}"
+              echo "⏰ 发送时间: ${{ steps.message-content.outputs.beijing_time }}"
+            else
+              echo "❌ 飞书API返回错误"
+              echo "错误详情: $RESPONSE_BODY"
+              exit 1
+            fi
           else
-            echo "❌ 飞书API返回错误"
+            echo "❌ HTTP请求失败"
+            echo "状态码: $HTTP_CODE"
             echo "错误详情: $RESPONSE_BODY"
             exit 1
           fi
-        else
-          echo "❌ HTTP请求失败"
-          echo "状态码: $HTTP_CODE"
-          echo "错误详情: $RESPONSE_BODY"
-          exit 1
-        fi
 
-    - name: Success Notification
-      if: success()
-      run: |
-        echo "🎉 飞书每日提醒任务完成！"
-        echo "================================="
-        echo "📅 发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-        echo "📝 消息类型: ${{ steps.time-calc.outputs.SCHEDULE_NAME }}"
-        echo "🔧 触发方式: ${{ steps.time-calc.outputs.TRIGGER_TYPE }}"
-        echo "🏷️ 签名验证: $([ -n "$FEISHU_SIGN_SECRET" ] && echo "已启用" || echo "未启用")"
-        echo "================================="
-        echo "请检查飞书群聊是否收到消息 📱"
+      - name: Success Notification
+        if: success()
+        run: |
+          echo "🎉 飞书每日提醒任务完成！"
+          echo "================================="
+          echo "📅 发送时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "📝 消息类型: ${{ steps.time-calc.outputs.SCHEDULE_NAME }}"
+          echo "🔧 触发方式: ${{ steps.time-calc.outputs.TRIGGER_TYPE }}"
+          echo "🏷️ 签名验证: $([ -n "$FEISHU_SIGN_SECRET" ] && echo "已启用" || echo "未启用")"
+          echo "================================="
+          echo "请检查飞书群聊是否收到消息 📱"
+
+      - name: Failure Notification
+        if: failure()
+        run: |
+          echo "💥 飞书消息发送失败！"
+          echo "请检查以下配置："
+          echo "1. ✅ FEISHU_WEBHOOK_URL 是否正确配置"
+          echo "2. ✅ FEISHU_SIGN_SECRET 是否与飞书机器人配置一致"
+          echo "3. 🔗 网络连接是否正常"
+          echo "4. ⏰ 飞书机器人是否在群聊中启用"
+          echo "5. 🔑 机器人权限是否足够"
+          exit 1
