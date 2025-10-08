@@ -1,23 +1,24 @@
-name: Test Feishu Bot Connection
+name: Daily Work Reminder
 
 on:
   workflow_dispatch:  # 允许手动触发
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  schedule:
+    # 北京时间早上9点 (UTC+8) = UTC时间凌晨1点
+    - cron: '0 1 * * *'
+    # 北京时间下午3点 (UTC+8) = UTC时间早上7点
+    - cron: '0 7 * * *'
 
 jobs:
-  test-feishu-bot:
+  send-reminder:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Test Feishu Bot Connection
+    - name: Send Morning Reminder
+      if: github.event.schedule == '0 1 * * *'
       run: |
-        # 发送测试消息到飞书机器人
-        response=$(curl -s -w "\n%{http_code}" -X POST \
+        curl -X POST \
           "https://open.feishu.cn/open-apis/bot/v2/hook/9057b68c-ebfc-4a5a-9a43-7a878b04b258" \
           -H "Content-Type: application/json" \
           -d '{
@@ -29,16 +30,26 @@ jobs:
               "header": {
                 "title": {
                   "tag": "plain_text",
-                  "content": "🤖 GitHub Action 测试"
+                  "content": "🌞 早安！开始今天的工作吧"
                 },
-                "template": "blue"
+                "template": "wathet"
               },
               "elements": [
                 {
                   "tag": "div",
                   "text": {
                     "tag": "lark_md",
-                    "content": "**✅ 飞书机器人连接测试成功！**\n\n📅 时间：'"$(date)"'\n🔗 仓库：${{ github.repository }}\n🎯 分支：${{ github.ref }}\n👤 触发者：${{ github.actor }}\n\n这是一条来自 GitHub Actions 的自动测试消息，证明飞书机器人配置正常。"
+                    "content": "**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n⏰ **提醒时间：** '"$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"'\n\n💫 **今日寄语：**\n新的一天，新的开始！保持积极心态，工作效率翻倍！🚀"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
                   }
                 },
                 {
@@ -48,45 +59,71 @@ jobs:
                       "tag": "button",
                       "text": {
                         "tag": "plain_text",
-                        "content": "查看仓库"
+                        "content": "👍 收到，开始工作"
                       },
-                      "type": "primary",
-                      "url": "https://github.com/${{ github.repository }}"
+                      "type": "primary"
                     }
                   ]
                 }
               ]
             }
-          }')
-        
-        # 提取 HTTP 状态码和响应体
-        http_code=$(echo "$response" | tail -n1)
-        response_body=$(echo "$response" | head -n -1)
-        
-        echo "HTTP Status Code: $http_code"
-        echo "Response: $response_body"
-        
-        # 检查是否成功 (HTTP 200 且包含 success)
-        if [ "$http_code" -eq 200 ] && echo "$response_body" | grep -q "success"; then
-          echo "✅ 飞书机器人连接测试成功！"
-          exit 0
-        else
-          echo "❌ 飞书机器人连接失败"
-          echo "错误详情：$response_body"
-          exit 1
-        fi
+          }'
 
-    - name: Success Notification
-      if: success()
+    - name: Send Afternoon Reminder
+      if: github.event.schedule == '0 7 * * *'
       run: |
-        echo "🎉 飞书机器人测试完成，消息已成功发送！"
-        echo "请检查飞书群聊是否收到测试消息。"
+        curl -X POST \
+          "https://open.feishu.cn/open-apis/bot/v2/hook/9057b68c-ebfc-4a5a-9a43-7a878b04b258" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "msg_type": "interactive",
+            "card": {
+              "config": {
+                "wide_screen_mode": true
+              },
+              "header": {
+                "title": {
+                  "tag": "plain_text",
+                  "content": "☕ 下午好！继续加油"
+                },
+                "template": "orange"
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n⏰ **提醒时间：** '"$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"'\n\n💪 **加油鼓励：**\n下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
+                  }
+                },
+                {
+                  "tag": "hr"
+                },
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
+                  }
+                },
+                {
+                  "tag": "action",
+                  "actions": [
+                    {
+                      "tag": "button",
+                      "text": {
+                        "tag": "plain_text",
+                        "content": "💪 继续努力"
+                      },
+                      "type": "primary"
+                    }
+                  ]
+                }
+              ]
+            }
+          }'
 
-    - name: Failure Notification
-      if: failure()
+    - name: Log Success
       run: |
-        echo "💥 飞书机器人测试失败！"
-        echo "请检查："
-        echo "1. Webhook URL 是否正确"
-        echo "2. 机器人是否在群聊中启用"
-        echo "3. 网络连接是否正常"
+        echo "✅ 飞书提醒消息发送成功！"
+        echo "发送时间：$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
