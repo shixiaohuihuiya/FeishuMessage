@@ -100,62 +100,167 @@ jobs:
             echo "ℹ️ 未生成签名 (FEISHU_SIGN_SECRET 未设置)"
           fi
 
-      - name: Prepare Message Content
-        id: message-content
+      - name: Prepare Morning Message
+        if: steps.time-calc.outputs.MESSAGE_TYPE == 'morning'
+        id: morning-message
         run: |
           # 获取北京时间
           BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-          echo "beijing_time=$BEIJING_TIME" >> $GITHUB_OUTPUT
           
-          # 上午消息内容
-          if [ "${{ steps.time-calc.outputs.MESSAGE_TYPE }}" == "morning" ]; then
-            echo "TITLE=🌞 早安！开始今天的工作吧" >> $GITHUB_OUTPUT
-            echo "TEMPLATE=wathet" >> $GITHUB_OUTPUT
-            echo "BUTTON_TEXT=👍 收到，开始工作" >> $GITHUB_OUTPUT
-            
-            # 随机上午鼓励语
-            MORNING_TIPS=(
-              "清晨的阳光带来新的希望，今天又是充满机遇的一天！✨"
-              "每一天都是新的开始，每一次努力都在积累成功！💪"
-              "用微笑开始新的一天，用行动创造美好成果！🚀"
-              "保持积极心态，工作效率自然提升！今天也是充满希望的一天！🌈"
-              "相信自己，今天的你比昨天更优秀！🌟"
-            )
-            INDEX=$(( RANDOM % ${#MORNING_TIPS[@]} ))
-            SELECTED_TIP="${MORNING_TIPS[$INDEX]}"
-            
-            CONTENT="**📋 今日工作提醒**\n\n🎯 **重要任务检查：**\n• 60表是否已上传？\n• 昨日工作是否已完成？\n• 今日计划是否明确？\n\n💫 **今日寄语：**\n$SELECTED_TIP"
-            echo "CONTENT=$CONTENT" >> $GITHUB_OUTPUT
-            
-            TIPS="🌈 **工作小贴士：**\n• 先完成最重要的任务\n• 保持专注，一次只做一件事\n• 记得适当休息，保护眼睛\n• 保持桌面整洁，心情更愉悦"
-            echo "TIPS=$TIPS" >> $GITHUB_OUTPUT
-            
-          # 下午消息内容  
-          else
-            echo "TITLE=☕ 下午好！继续加油" >> $GITHUB_OUTPUT
-            echo "TEMPLATE=orange" >> $GITHUB_OUTPUT
-            echo "BUTTON_TEXT=💪 继续努力" >> $GITHUB_OUTPUT
-            
-            # 随机下午鼓励语
-            AFTERNOON_TIPS=(
-              "下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
-              "坚持就是胜利，下午的工作同样重要！💪"
-              "喝杯咖啡，调整状态，继续向目标前进！🚀"
-              "每一次坚持都在向成功靠近，下午继续加油！🌈"
-              "保持节奏，稳扎稳打，今天的目标一定能完成！🌟"
-            )
-            INDEX=$(( RANDOM % ${#AFTERNOON_TIPS[@]} ))
-            SELECTED_TIP="${AFTERNOON_TIPS[$INDEX]}"
-            
-            CONTENT="**📊 下午工作检查**\n\n🎯 **进度确认：**\n• 60表是否已按时上传？\n• 上午任务完成情况如何？\n• 下午工作重点明确了吗？\n\n💪 **加油鼓励：**\n$SELECTED_TIP"
-            echo "CONTENT=$CONTENT" >> $GITHUB_OUTPUT
-            
-            TIPS="🌟 **下午工作建议：**\n• 回顾上午进度，调整下午计划\n• 处理需要深度思考的任务\n• 适当活动，保持精力充沛\n• 为明天的工作做好准备"
-            echo "TIPS=$TIPS" >> $GITHUB_OUTPUT
-          fi
+          # 随机上午鼓励语
+          MORNING_TIPS=(
+            "清晨的阳光带来新的希望，今天又是充满机遇的一天！✨"
+            "每一天都是新的开始，每一次努力都在积累成功！💪"
+            "用微笑开始新的一天，用行动创造美好成果！🚀"
+            "保持积极心态，工作效率自然提升！今天也是充满希望的一天！🌈"
+            "相信自己，今天的你比昨天更优秀！🌟"
+          )
+          INDEX=$(( RANDOM % ${#MORNING_TIPS[@]} ))
+          SELECTED_TIP="${MORNING_TIPS[$INDEX]}"
+          
+          # 构建消息JSON
+          MESSAGE_JSON=$(cat <<EOF
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true
+    },
+    "header": {
+      "title": {
+        "tag": "plain_text",
+        "content": "🌞 早安！开始今天的工作吧"
+      },
+      "template": "wathet"
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "**📋 今日工作提醒**\\n\\n🎯 **重要任务检查：**\\n• 60表是否已上传？\\n• 昨日工作是否已完成？\\n• 今日计划是否明确？\\n\\n💫 **今日寄语：**\\n${SELECTED_TIP}\\n\\n⏰ **提醒时间：** ${BEIJING_TIME}\\n🕒 **提醒时段：** ${{ steps.time-calc.outputs.SCHEDULE_NAME }}\\n🔧 **触发方式：** ${{ steps.time-calc.outputs.TRIGGER_TYPE }}"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "🌈 **工作小贴士：**\\n• 先完成最重要的任务\\n• 保持专注，一次只做一件事\\n• 记得适当休息，保护眼睛\\n• 保持桌面整洁，心情更愉悦"
+        }
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "tag": "plain_text",
+              "content": "👍 收到，开始工作"
+            },
+            "type": "primary",
+            "url": "https://github.com/${{ github.repository }}"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+          )
+          
+          # 将JSON保存到文件，避免转义问题
+          echo "$MESSAGE_JSON" > morning_message.json
+          echo "✅ 上午消息准备完成"
+
+      - name: Prepare Afternoon Message
+        if: steps.time-calc.outputs.MESSAGE_TYPE == 'afternoon'
+        id: afternoon-message
+        run: |
+          # 获取北京时间
+          BEIJING_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          
+          # 随机下午鼓励语
+          AFTERNOON_TIPS=(
+            "下午是创造奇迹的时间！继续保持专注，胜利在望！✨"
+            "坚持就是胜利，下午的工作同样重要！💪"
+            "喝杯咖啡，调整状态，继续向目标前进！🚀"
+            "每一次坚持都在向成功靠近，下午继续加油！🌈"
+            "保持节奏，稳扎稳打，今天的目标一定能完成！🌟"
+          )
+          INDEX=$(( RANDOM % ${#AFTERNOON_TIPS[@]} ))
+          SELECTED_TIP="${AFTERNOON_TIPS[$INDEX]}"
+          
+          # 构建消息JSON
+          MESSAGE_JSON=$(cat <<EOF
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true
+    },
+    "header": {
+      "title": {
+        "tag": "plain_text",
+        "content": "☕ 下午好！继续加油"
+      },
+      "template": "orange"
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "**📊 下午工作检查**\\n\\n🎯 **进度确认：**\\n• 60表是否已按时上传？\\n• 上午任务完成情况如何？\\n• 下午工作重点明确了吗？\\n\\n💪 **加油鼓励：**\\n${SELECTED_TIP}\\n\\n⏰ **提醒时间：** ${BEIJING_TIME}\\n🕒 **提醒时段：** ${{ steps.time-calc.outputs.SCHEDULE_NAME }}\\n🔧 **触发方式：** ${{ steps.time-calc.outputs.TRIGGER_TYPE }}"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "🌟 **下午工作建议：**\\n• 回顾上午进度，调整下午计划\\n• 处理需要深度思考的任务\\n• 适当活动，保持精力充沛\\n• 为明天的工作做好准备"
+        }
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "tag": "plain_text",
+              "content": "💪 继续努力"
+            },
+            "type": "primary",
+            "url": "https://github.com/${{ github.repository }}"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+          )
+          
+          # 将JSON保存到文件，避免转义问题
+          echo "$MESSAGE_JSON" > afternoon_message.json
+          echo "✅ 下午消息准备完成"
 
       - name: Send Message to Feishu
         run: |
+          # 确定使用哪个消息文件
+          if [ "${{ steps.time-calc.outputs.MESSAGE_TYPE }}" == "morning" ]; then
+            MESSAGE_FILE="morning_message.json"
+            echo "📤 发送上午提醒消息"
+          else
+            MESSAGE_FILE="afternoon_message.json"
+            echo "📤 发送下午提醒消息"
+          fi
+          
           # 构建请求头
           HEADERS=(
             "-H" "Content-Type: application/json"
@@ -171,67 +276,13 @@ jobs:
             echo "ℹ️ 发送无签名验证的消息"
           fi
           
-          # 构建请求数据
-          REQUEST_JSON=$(cat <<EOF
-{
-  "msg_type": "interactive",
-  "card": {
-    "config": {
-      "wide_screen_mode": true
-    },
-    "header": {
-      "title": {
-        "tag": "plain_text",
-        "content": "${{ steps.message-content.outputs.TITLE }}"
-      },
-      "template": "${{ steps.message-content.outputs.TEMPLATE }}"
-    },
-    "elements": [
-      {
-        "tag": "div",
-        "text": {
-          "tag": "lark_md",
-          "content": "${{ steps.message-content.outputs.CONTENT }}\n\n⏰ **提醒时间：** ${{ steps.message-content.outputs.beijing_time }}\n🕒 **提醒时段：** ${{ steps.time-calc.outputs.SCHEDULE_NAME }}\n🔧 **触发方式：** ${{ steps.time-calc.outputs.TRIGGER_TYPE }}"
-        }
-      },
-      {
-        "tag": "hr"
-      },
-      {
-        "tag": "div",
-        "text": {
-          "tag": "lark_md",
-          "content": "${{ steps.message-content.outputs.TIPS }}"
-        }
-      },
-      {
-        "tag": "action",
-        "actions": [
-          {
-            "tag": "button",
-            "text": {
-              "tag": "plain_text",
-              "content": "${{ steps.message-content.outputs.BUTTON_TEXT }}"
-            },
-            "type": "primary",
-            "url": "https://github.com/${{ github.repository }}"
-          }
-        ]
-      }
-    ]
-  }
-}
-EOF
-          )
-          
-          echo "📤 发送消息到飞书..."
           echo "URL: $(echo $FEISHU_WEBHOOK_URL | cut -d'/' -f1-5)/***"
           
           # 发送请求
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "$FEISHU_WEBHOOK_URL" \
             "${HEADERS[@]}" \
-            -d "$REQUEST_JSON")
+            -d "@$MESSAGE_FILE")
           
           # 解析响应
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
@@ -245,7 +296,6 @@ EOF
             if echo "$RESPONSE_BODY" | grep -q '"StatusCode":0'; then
               echo "✅ 飞书消息发送成功！"
               echo "📝 消息类型: ${{ steps.time-calc.outputs.SCHEDULE_NAME }}"
-              echo "⏰ 发送时间: ${{ steps.message-content.outputs.beijing_time }}"
             else
               echo "❌ 飞书API返回错误"
               echo "错误详情: $RESPONSE_BODY"
@@ -257,6 +307,12 @@ EOF
             echo "错误详情: $RESPONSE_BODY"
             exit 1
           fi
+
+      - name: Cleanup
+        run: |
+          # 清理临时文件
+          rm -f morning_message.json afternoon_message.json
+          echo "🧹 临时文件已清理"
 
       - name: Success Notification
         if: success()
